@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Railway Reservation and Scheduling System</title>
+<style>
+:root{--bg:#0f151c;--card:#17202a;--line:#263342;--txt:#e8eef5;--mut:#8b9bb0;--amber:#f2c14e;--teal:#3cc9b4;--red:#f07178}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 Bahnschrift,"Segoe UI",system-ui,sans-serif}
+header{padding:18px 20px 0;max-width:980px;margin:auto}
+h1{font-size:22px;margin:0 0 12px;font-weight:600}
+nav{display:flex;gap:4px;border-bottom:1px solid var(--line);overflow-x:auto}
+nav button{background:none;border:0;color:var(--mut);padding:10px 14px;font:inherit;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+nav button.on{color:var(--amber);border-color:var(--amber)}
+main{max-width:980px;margin:auto;padding:18px 20px 60px}
+section{display:none}section.on{display:block}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:16px}
+label{display:flex;flex-direction:column;gap:4px;color:var(--mut);font-size:13px}
+select,input{background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:9px 10px;font:inherit;min-width:140px}
+button.go{background:var(--amber);color:#1a1405;border:0;border-radius:6px;padding:10px 16px;font:inherit;font-weight:600;cursor:pointer}
+button.alt{background:none;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:9px 14px;font:inherit;cursor:pointer}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.train{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:10px;display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
+.train b{font-size:17px}
+.time{font-family:ui-monospace,Consolas,monospace;color:var(--amber);font-size:20px}
+.mut{color:var(--mut);font-size:13px}
+.ok{color:var(--teal)}.wait{color:var(--amber)}.bad{color:var(--red)}
+svg{width:100%;height:auto;background:var(--card);border:1px solid var(--line);border-radius:8px}
+.e{stroke:var(--line);stroke-width:3}.e.hot{stroke:var(--amber);stroke-width:5}
+.n{fill:var(--bg);stroke:var(--mut);stroke-width:2}.n.hot{stroke:var(--amber);fill:var(--amber)}
+svg text{fill:var(--mut);font-size:12px}svg text.hot{fill:var(--txt)}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line)}th{color:var(--mut);font-weight:400;font-size:13px}
+td.m{font-family:ui-monospace,Consolas,monospace}
+.chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-height:40px}
+.chip{font-family:ui-monospace,Consolas,monospace;border:1px solid var(--line);background:var(--card);border-radius:6px;padding:6px 10px}
+.chip.f{border-color:var(--amber)}
+.box{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px}
+h2{font-size:16px;margin:0 0 8px}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--card);border:1px solid var(--amber);border-radius:8px;padding:10px 16px;display:none;max-width:90%}
+@media(max-width:520px){.train{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:no-preference){.e,.n{transition:stroke .3s,fill .3s}}
+</style>
+</head>
+<body>
+<header>
+<h1>Railway Reservation and Scheduling System</h1>
+<nav id="tabs">
+<button data-t="search" class="on">Search trains</button>
+<button data-t="book">Book ticket</button>
+<button data-t="tickets">My tickets</button>
+<button data-t="dsa">Data structures</button>
+</nav>
+</header>
+<main>
+
+<section id="search" class="on">
+<div class="row">
+<label>From<select id="from"></select></label>
+<label>To<select id="to"></select></label>
+<label>Sort by<select id="sort"><option value="dep">Departure time</option><option value="fare">Fare</option></select></label>
+<button class="go" id="find">Find trains</button>
+</div>
+<div id="results"></div>
+<h2>Shortest route</h2>
+<svg id="map" viewBox="0 0 600 370" role="img" aria-label="Station map"></svg>
+<p class="mut" id="mapinfo"></p>
+</section>
+
+<section id="book">
+<div class="box" id="bsum">Pick a train from the search page first.</div>
+<div class="row">
+<label>Passenger name<input id="pname" placeholder="Full name"></label>
+<button class="go" id="confirm">Confirm booking</button>
+</div>
+<p class="mut" id="bmsg"></p>
+</section>
+
+<section id="tickets">
+<div class="row">
+<label>PNR<input id="pnr" placeholder="e.g. PNR1001"></label>
+<button class="go" id="lookup">Look up</button>
+<button class="alt" id="cancel">Cancel ticket</button>
+<button class="alt" id="undo">Undo last booking</button>
+</div>
+<div class="box" id="tinfo">Enter a PNR to see the ticket.</div>
+<table><thead><tr><th>PNR</th><th>Passenger</th><th>Journey</th><th>Fare</th><th>Status</th></tr></thead><tbody id="tbody"></tbody></table>
+</section>
+
+<section id="dsa">
+<div class="box"><h2>Waiting list (queue)</h2><div id="vq"></div></div>
+<div class="box"><h2>Undo history (stack)</h2><div id="vs"></div></div>
+<div class="box"><h2>PNR lookup table (hash map)</h2><div id="vh"></div></div>
+</section>
+
+</main>
+<div id="toast" role="status"></div>
+
+<script>
+/* DEMO ONLY: all data and logic below is mock JavaScript so you can see the look.
+   In the real project, each function marked API: becomes a fetch() to your C++ server. */
+const POS={Karachi:[110,340],Hyderabad:[150,300],Sukkur:[210,255],Multan:[310,225],Faisalabad:[360,165],Lahore:[440,150],Rawalpindi:[470,90],Peshawar:[440,30]};
+const E=[["Karachi","Hyderabad",165],["Hyderabad","Sukkur",300],["Sukkur","Multan",390],["Multan","Faisalabad",240],["Multan","Lahore",340],["Faisalabad","Lahore",150],["Lahore","Rawalpindi",290],["Rawalpindi","Peshawar",170]];
+const adj={};E.forEach(([a,b,w])=>{(adj[a]=adj[a]||[]).push([b,w]);(adj[b]=adj[b]||[]).push([a,w])});
+const km=(a,b)=>E.find(e=>(e[0]==a&&e[1]==b)||(e[0]==b&&e[1]==a))[2];
+function dijkstra(s,t){const d={},p={},q=new Set(Object.keys(adj));q.forEach(k=>d[k]=Infinity);d[s]=0;
+ while(q.size){let u=null;q.forEach(k=>{if(u===null||d[k]<d[u])u=k});q.delete(u);if(u===t)break;
+ adj[u].forEach(([v,w])=>{if(d[u]+w<d[v]){d[v]=d[u]+w;p[v]=u}})}
+ const path=[];for(let c=t;c;c=p[c])path.unshift(c);return{path,dist:d[t]}}
+
+const trains=[
+{id:"T1",name:"Green Line",route:["Karachi","Hyderabad","Sukkur","Multan","Lahore","Rawalpindi"],dep:"06:00",seats:3},
+{id:"T2",name:"Tezgam",route:["Karachi","Hyderabad","Sukkur","Multan","Faisalabad","Lahore","Rawalpindi","Peshawar"],dep:"18:30",seats:2},
+{id:"T3",name:"Awam Express",route:["Lahore","Rawalpindi","Peshawar"],dep:"09:15",seats:1},
+{id:"T4",name:"Shalimar",route:["Multan","Faisalabad","Lahore"],dep:"07:45",seats:4}];
+const tickets=new Map(),wait={},undo=[];let counter=1001,sel=null;
+trains.forEach(t=>wait[t.id]=[]);
+const $=id=>document.getElementById(id);
+const esc=s=>s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const tkm=(t,a,b)=>{let i=t.route.indexOf(a),j=t.route.indexOf(b),s=0;for(;i<j;i++)s+=km(t.route[i],t.route[i+1]);return s};
+const fare=(t,a,b)=>tkm(t,a,b)*3;
+function toast(m){const t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display="none",2800)}
+function show(id){document.querySelectorAll("section").forEach(s=>s.classList.toggle("on",s.id==id));
+ document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.t==id));renderAll()}
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>show(b.dataset.t));
+
+const names=Object.keys(POS);
+$("from").innerHTML=$("to").innerHTML=names.map(n=>`<option>${n}</option>`).join("");
+$("from").value="Karachi";$("to").value="Lahore";
+
+function drawMap(path){const hot=new Set(path),hotE=new Set();for(let i=0;i<path.length-1;i++)hotE.add(path[i]+"|"+path[i+1]),hotE.add(path[i+1]+"|"+path[i]);
+ $("map").innerHTML=E.map(([a,b])=>`<line class="e ${hotE.has(a+"|"+b)?"hot":""}" x1="${POS[a][0]}" y1="${POS[a][1]}" x2="${POS[b][0]}" y2="${POS[b][1]}"/>`).join("")+
+ names.map(n=>`<circle class="n ${hot.has(n)?"hot":""}" cx="${POS[n][0]}" cy="${POS[n][1]}" r="7"/><text class="${hot.has(n)?"hot":""}" x="${POS[n][0]+12}" y="${POS[n][1]+4}">${n}</text>`).join("")}
+
+function search(){/* API: GET /api/search?from=..&to=..&sort=.. */
+ const a=$("from").value,b=$("to").value;
+ if(a===b){$("results").innerHTML='<p class="bad">Choose two different stations.</p>';return}
+ let r=trains.filter(t=>{const i=t.route.indexOf(a),j=t.route.indexOf(b);return i>=0&&j>i});
+ r.sort($("sort").value=="fare"?(x,y)=>fare(x,a,b)-fare(y,a,b):(x,y)=>x.dep.localeCompare(y.dep));
+ $("results").innerHTML=r.length?r.map(t=>`<div class="train"><div><b>${t.name}</b> <span class="mut">${t.id}</span><div class="mut">${tkm(t,a,b)} km, ${t.route.length} stops on line</div>
+ <div class="${t.seats?"ok":"wait"}">${t.seats?t.seats+" seats left":"Full, join the waiting list"}</div></div>
+ <div style="text-align:right"><div class="time">${t.dep}</div><div>Rs ${fare(t,a,b)}</div><button class="go" data-b="${t.id}" style="margin-top:6px">Book</button></div></div>`).join(""):'<p class="mut">No train runs directly between these stations.</p>';
+ document.querySelectorAll("[data-b]").forEach(x=>x.onclick=()=>{sel={tid:x.dataset.b,a,b};show("book")});
+ const d=dijkstra(a,b);drawMap(d.path);$("mapinfo").textContent=d.path.join(" > ")+" ("+d.dist+" km)"}
+$("find").onclick=search;
+
+function renderBook(){if(!sel){$("bsum").textContent="Pick a train from the search page first.";return}
+ const t=trains.find(x=>x.id==sel.tid);$("bsum").innerHTML=`<b>${t.name}</b> at <span class="time">${t.dep}</span><br>${sel.a} to ${sel.b}, Rs ${fare(t,sel.a,sel.b)}<br><span class="${t.seats?"ok":"wait"}">${t.seats?t.seats+" seats left":"Train full: you will join the waiting list"}</span>`}
+$("confirm").onclick=()=>{/* API: POST /api/book */
+ const n=$("pname").value.trim();if(!sel){$("bmsg").textContent="Pick a train first.";return}
+ if(!n){$("bmsg").textContent="Enter the passenger name.";return}
+ const t=trains.find(x=>x.id==sel.tid),pnr="PNR"+counter++;
+ const tk={pnr,name:n,tid:t.id,from:sel.a,to:sel.b,fare:fare(t,sel.a,sel.b),status:"CONFIRMED"};
+ if(t.seats>0)t.seats--;else{tk.status="WAITING";wait[t.id].push(pnr)}
+ tickets.set(pnr,tk);undo.push(pnr);$("pname").value="";
+ $("bmsg").textContent="Booked. Your PNR is "+pnr+" ("+tk.status.toLowerCase()+").";toast("Booked "+pnr);renderAll()};
+
+function cancel(pnr){/* API: POST /api/cancel */
+ const tk=tickets.get(pnr);if(!tk)return false;const t=trains.find(x=>x.id==tk.tid);
+ tickets.delete(pnr);const i=undo.indexOf(pnr);if(i>=0)undo.splice(i,1);
+ if(tk.status=="CONFIRMED"){t.seats++;const q=wait[t.id];
+  while(q.length){const nx=tickets.get(q.shift());if(nx){nx.status="CONFIRMED";t.seats--;toast(nx.pnr+" moved off the waiting list");break}}}
+ else wait[t.id]=wait[t.id].filter(x=>x!=pnr);
+ return true}
+$("lookup").onclick=()=>{const tk=tickets.get($("pnr").value.trim().toUpperCase());
+ $("tinfo").innerHTML=tk?`<b>${esc(tk.name)}</b><br>${tk.from} to ${tk.to} on ${tk.tid}<br>Rs ${tk.fare}, <span class="${tk.status=="CONFIRMED"?"ok":"wait"}">${tk.status.toLowerCase()}</span>`:'<span class="bad">No ticket found for that PNR.</span>'};
+$("cancel").onclick=()=>{const p=$("pnr").value.trim().toUpperCase();if(cancel(p)){toast("Cancelled "+p);$("tinfo").textContent="Ticket cancelled."}else $("tinfo").innerHTML='<span class="bad">No ticket found for that PNR.</span>';renderAll()};
+$("undo").onclick=()=>{if(!undo.length){toast("Nothing to undo");return}const p=undo[undo.length-1];cancel(p);toast("Undid booking "+p);renderAll()};
+
+function renderTickets(){$("tbody").innerHTML=[...tickets.values()].map(t=>`<tr><td class="m">${t.pnr}</td><td>${esc(t.name)}</td><td>${t.from} to ${t.to}</td><td>Rs ${t.fare}</td><td class="${t.status=="CONFIRMED"?"ok":"wait"}">${t.status.toLowerCase()}</td></tr>`).join("")||'<tr><td colspan="5" class="mut">No bookings yet. Search a train and book one.</td></tr>'}
+function renderDSA(){
+ $("vq").innerHTML=trains.map(t=>`<div class="mut">${t.name}</div><div class="chips">${wait[t.id].length?wait[t.id].map((p,i)=>`<span class="chip ${i?"":"f"}">${p}${i?"":" (front)"}</span>`).join(" > "):'<span class="mut">Empty</span>'}</div>`).join("");
+ $("vs").innerHTML=undo.length?`<div class="chips">`+[...undo].reverse().map((p,i)=>`<span class="chip ${i?"":"f"}">${p}${i?"":" (top)"}</span>`).join("")+`</div>`:'<span class="mut">Empty: nothing to undo</span>';
+ const B=7,h=[...Array(B)].map(()=>[]);tickets.forEach((t,p)=>{let k=0;for(const c of p)k+=c.charCodeAt(0);h[k%B].push(p)});
+ $("vh").innerHTML=h.map((l,i)=>`<div class="chips"><span class="mut" style="width:60px">Bucket ${i}</span>${l.length?l.map(p=>`<span class="chip">${p}</span>`).join(" > "):'<span class="mut">-</span>'}</div>`).join("")}
+function renderAll(){renderBook();renderTickets();renderDSA();search()}
+renderAll();
+</script>
+</body>
+</html>
