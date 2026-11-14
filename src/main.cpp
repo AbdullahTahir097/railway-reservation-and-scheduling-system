@@ -8,7 +8,7 @@ public:
     string name;
     string source;
     string destination;
-    int departure;   // 1830 means 18:30
+    int departure;   // HHMM format, e.g., 1830 means 18:30
     int fare;
     int seats;
 
