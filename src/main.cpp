@@ -98,49 +98,210 @@ void searchByRoute(Train t[], int n, string from, string to) {
         cout << "No train found for this route" << endl;
     }
 }
+// one node of the linked list = one ticket
+class Ticket {
+public:
+    int pnr;
+    string passengerName;
+    int trainId;
+    string source;
+    string destination;
+    int fare;
+    string status;      // CONFIRMED or WAITING
+    Ticket* next;
+};
+
+class TicketList {
+public:
+    Ticket* head;
+
+    TicketList() {
+        head = NULL;
+    }
+
+    // add a new ticket at the end of the list
+    void addTicket(int pnr, string name, int trainId, string source, string destination, int fare, string status) {
+        Ticket* newTicket = new Ticket;
+        newTicket->pnr = pnr;
+        newTicket->passengerName = name;
+        newTicket->trainId = trainId;
+        newTicket->source = source;
+        newTicket->destination = destination;
+        newTicket->fare = fare;
+        newTicket->status = status;
+        newTicket->next = NULL;
+
+        if (head == NULL) {
+            head = newTicket;
+        } else {
+            Ticket* temp = head;
+            while (temp->next != NULL) {
+                temp = temp->next;
+            }
+            temp->next = newTicket;
+        }
+    }
+    // print every ticket from head to the end
+    void display() {
+        if (head == NULL) {
+            cout << "No tickets" << endl;
+            return;
+        }
+        Ticket* temp = head;
+        while (temp != NULL) {
+            cout << "PNR " << temp->pnr << " | " << temp->passengerName
+                 << " | Train " << temp->trainId << " | " << temp->source
+                 << " to " << temp->destination << " | Rs " << temp->fare
+                 << " | " << temp->status << endl;
+            temp = temp->next;
+        }
+    }
+
+    // find a ticket by PNR, returns NULL if not found
+    Ticket* findByPnr(int pnr) {
+        Ticket* temp = head;
+        while (temp != NULL) {
+            if (temp->pnr == pnr) {
+                return temp;
+            }
+            temp = temp->next;
+        }
+        return NULL;
+    }
+
+    // remove a ticket by PNR, returns true if it was removed
+    bool removeByPnr(int pnr) {
+        if (head == NULL) {
+            return false;
+        }
+        // case 1: the ticket is the first one
+        if (head->pnr == pnr) {
+            Ticket* toDelete = head;
+            head = head->next;
+            delete toDelete;
+            return true;
+        }
+        // case 2: the ticket is somewhere after the first
+        Ticket* prev = head;
+        Ticket* cur = head->next;
+        while (cur != NULL) {
+            if (cur->pnr == pnr) {
+                prev->next = cur->next;
+                delete cur;
+                return true;
+            }
+            prev = cur;
+            cur = cur->next;
+        }
+        return false;
+    }
+};
+// book a ticket for a train
+// the & means the original list and counter are changed, not copies
+void bookTicket(Train trains[], int trainCount, TicketList &list, int &nextPnr) {
+    int id;
+    string name;
+    cout << "Enter train id: ";
+    cin >> id;
+
+    int pos = linearSearch(trains, trainCount, id);
+    if (pos == -1) {
+        cout << "Train not found" << endl;
+        return;
+    }
+
+    cout << "Enter passenger name: ";
+    cin.ignore();
+    getline(cin, name);
+
+    string status;
+    if (trains[pos].seats > 0) {
+        trains[pos].seats--;
+        status = "CONFIRMED";
+    } else {
+        status = "WAITING";
+    }
+
+    list.addTicket(nextPnr, name, id, trains[pos].source, trains[pos].destination, trains[pos].fare, status);
+    cout << "Ticket booked. Your PNR is " << nextPnr << " (" << status << ")" << endl;
+    nextPnr++;
+}
+
+// cancel a ticket using its PNR
+void cancelTicket(Train trains[], int trainCount, TicketList &list) {
+    int pnr;
+    cout << "Enter PNR: ";
+    cin >> pnr;
+
+    Ticket* t = list.findByPnr(pnr);
+    if (t == NULL) {
+        cout << "Ticket not found" << endl;
+        return;
+    }
+
+    // a confirmed ticket gives its seat back to the train
+    if (t->status == "CONFIRMED") {
+        int pos = linearSearch(trains, trainCount, t->trainId);
+        trains[pos].seats++;
+    }
+
+    list.removeByPnr(pnr);
+    cout << "Ticket " << pnr << " cancelled" << endl;
+}
 
 int main() {
     const int MAX = 10;
     Train trains[MAX];
     int count = 0;
+    TicketList tickets;
+    int nextPnr = 1001;
 
     trains[count++] = {1, "Green Line", "Karachi", "Rawalpindi", 600, 3600, 3};
     trains[count++] = {2, "Tezgam", "Karachi", "Peshawar", 1830, 4500, 2};
     trains[count++] = {3, "Awam Express", "Lahore", "Peshawar", 915, 1800, 1};
     trains[count++] = {4, "Shalimar", "Multan", "Lahore", 745, 1000, 4};
 
-    // searching first, while the trains are still in id order (1, 2, 3, 4)
-    cout << "Linear search for id 3:" << endl;
-    int pos = linearSearch(trains, count, 3);
-    if (pos != -1) {
-        trains[pos].display();
+    int choice = -1;
+    while (choice != 0) {
+        cout << endl;
+        cout << "===== Railway Reservation System =====" << endl;
+        cout << "1. View all trains" << endl;
+        cout << "2. Sort trains by departure time" << endl;
+        cout << "3. Sort trains by fare" << endl;
+        cout << "4. Search trains by route" << endl;
+        cout << "5. Book a ticket" << endl;
+        cout << "6. View all tickets" << endl;
+        cout << "7. Cancel a ticket" << endl;
+        cout << "0. Exit" << endl;
+        cout << "Enter your choice: ";
+        cin >> choice;
+
+        if (choice == 1) {
+            showAll(trains, count);
+        } else if (choice == 2) {
+            sortByDeparture(trains, count);
+            showAll(trains, count);
+        } else if (choice == 3) {
+            sortByFare(trains, count);
+            showAll(trains, count);
+        } else if (choice == 4) {
+            string from, to;
+            cout << "From: ";
+            cin >> from;
+            cout << "To: ";
+            cin >> to;
+            searchByRoute(trains, count, from, to);
+        } else if (choice == 5) {
+            bookTicket(trains, count, tickets, nextPnr);
+        } else if (choice == 6) {
+            tickets.display();
+        } else if (choice == 7) {
+            cancelTicket(trains, count, tickets);
+        } else if (choice == 0) {
+            cout << "Goodbye" << endl;
+        } else {
+            cout << "Invalid choice, try again" << endl;
+        }
     }
-
-    cout << endl << "Binary search for id 4:" << endl;
-    pos = binarySearch(trains, count, 4);
-    if (pos != -1) {
-        cout << "Found at index " << pos << ": ";
-        trains[pos].display();
-    }
-
-    cout << endl << "Binary search for id 7:" << endl;
-    pos = binarySearch(trains, count, 7);
-    if (pos == -1) {
-        cout << "Train not found" << endl;
-    }
-
-    cout << endl << "Trains from Karachi to Peshawar:" << endl;
-    searchByRoute(trains, count, "Karachi", "Peshawar");
-
-    cout << endl << "Trains from Lahore to Karachi:" << endl;
-    searchByRoute(trains, count, "Lahore", "Karachi");
-
-    cout << endl << "Sorted by departure:" << endl;
-    sortByDeparture(trains, count);
-    showAll(trains, count);
-
-    cout << endl << "Sorted by fare:" << endl;
-    sortByFare(trains, count);
-    showAll(trains, count);
     return 0;
 }
