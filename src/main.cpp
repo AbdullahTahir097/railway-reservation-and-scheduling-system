@@ -98,6 +98,7 @@ void searchByRoute(Train t[], int n, string from, string to) {
         cout << "No train found for this route" << endl;
     }
 }
+
 // one node of the linked list = one ticket
 class Ticket {
 public:
@@ -141,6 +142,7 @@ public:
             temp->next = newTicket;
         }
     }
+
     // print every ticket from head to the end
     void display() {
         if (head == NULL) {
@@ -196,6 +198,7 @@ public:
         return false;
     }
 };
+
 // one node in the waiting queue
 class QueueNode {
 public:
@@ -401,11 +404,12 @@ public:
 };
 
 // show the waiting list for every train
+// the queues are indexed by train id, so sorting the trains does not mix them up
 void showWaitingLists(Train trains[], int trainCount, WaitingQueue waitQueues[]) {
     cout << "\n--- Waiting Lists ---" << endl;
     for (int i = 0; i < trainCount; i++) {
         cout << trains[i].name << " (ID " << trains[i].id << "):" << endl;
-        waitQueues[i].display();
+        waitQueues[trains[i].id].display();
     }
 }
 
@@ -438,9 +442,9 @@ void bookTicket(Train trains[], int trainCount, TicketList &list, int &nextPnr, 
     list.addTicket(nextPnr, name, id, trains[pos].source, trains[pos].destination, trains[pos].fare, status);
 
     if (status == "WAITING") {
-        waitQueues[pos].enqueue(nextPnr);
+        waitQueues[id].enqueue(nextPnr);
         cout << "Train is full. You have been added to the waiting list." << endl;
-        cout << "Your position in queue: " << waitQueues[pos].size << endl;
+        cout << "Your position in queue: " << waitQueues[id].size << endl;
     }
 
     undoStack.push(nextPnr);
@@ -464,9 +468,9 @@ void cancelTicket(Train trains[], int trainCount, TicketList &list, WaitingQueue
         int pos = linearSearch(trains, trainCount, t->trainId);
 
         // check if someone is waiting in the queue for this train
-        if (!waitQueues[pos].isEmpty()) {
+        if (!waitQueues[t->trainId].isEmpty()) {
             // promote the front of the waiting list to confirmed
-            int promotedPnr = waitQueues[pos].dequeue();
+            int promotedPnr = waitQueues[t->trainId].dequeue();
             Ticket* promoted = list.findByPnr(promotedPnr);
             if (promoted != NULL) {
                 promoted->status = "CONFIRMED";
@@ -478,8 +482,7 @@ void cancelTicket(Train trains[], int trainCount, TicketList &list, WaitingQueue
         }
     } else if (t->status == "WAITING") {
         // remove from the waiting queue
-        int pos = linearSearch(trains, trainCount, t->trainId);
-        waitQueues[pos].remove(pnr);
+        waitQueues[t->trainId].remove(pnr);
     }
 
     undoStack.remove(pnr);
@@ -506,8 +509,8 @@ void undoLastBooking(Train trains[], int trainCount, TicketList &list, WaitingQu
     if (t->status == "CONFIRMED") {
         int pos = linearSearch(trains, trainCount, t->trainId);
 
-        if (!waitQueues[pos].isEmpty()) {
-            int promotedPnr = waitQueues[pos].dequeue();
+        if (!waitQueues[t->trainId].isEmpty()) {
+            int promotedPnr = waitQueues[t->trainId].dequeue();
             Ticket* promoted = list.findByPnr(promotedPnr);
             if (promoted != NULL) {
                 promoted->status = "CONFIRMED";
@@ -517,8 +520,7 @@ void undoLastBooking(Train trains[], int trainCount, TicketList &list, WaitingQu
             trains[pos].seats++;
         }
     } else if (t->status == "WAITING") {
-        int pos = linearSearch(trains, trainCount, t->trainId);
-        waitQueues[pos].remove(pnr);
+        waitQueues[t->trainId].remove(pnr);
     }
 
     list.removeByPnr(pnr);
@@ -531,7 +533,7 @@ int main() {
     int count = 0;
     TicketList tickets;
     int nextPnr = 1001;
-    WaitingQueue waitQueues[MAX];
+    WaitingQueue waitQueues[MAX + 1];   // indexed by train id (ids start from 1)
     UndoStack undoStack;
 
     trains[count++] = {1, "Green Line", "Karachi", "Rawalpindi", 600, 3600, 3};
