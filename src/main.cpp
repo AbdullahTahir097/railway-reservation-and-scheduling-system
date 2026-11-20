@@ -113,12 +113,92 @@ public:
     Ticket* next;
 };
 
+// number of buckets in the PNR hash map (a prime number)
+const int HASH_SIZE = 101;
+
+// one node inside a hash bucket: a PNR and a pointer to that ticket
+class HashNode {
+public:
+    int pnr;
+    Ticket* ticket;
+    HashNode* next;
+};
+
 class TicketList {
 public:
     Ticket* head;
+    HashNode* table[HASH_SIZE];   // hash map: PNR -> ticket, for fast lookup
 
     TicketList() {
         head = NULL;
+        for (int i = 0; i < HASH_SIZE; i++) {
+            table[i] = NULL;
+        }
+    }
+
+    // hash function: turns a PNR into a bucket number
+    int hashFunction(int pnr) {
+        return pnr % HASH_SIZE;
+    }
+
+    // add a PNR and its ticket to the hash map
+    void hashInsert(int pnr, Ticket* ticket) {
+        int index = hashFunction(pnr);
+        HashNode* newNode = new HashNode;
+        newNode->pnr = pnr;
+        newNode->ticket = ticket;
+        newNode->next = table[index];
+        table[index] = newNode;
+    }
+
+    // find a ticket using the hash map, returns NULL if not found
+    Ticket* hashSearch(int pnr) {
+        int index = hashFunction(pnr);
+        HashNode* temp = table[index];
+        while (temp != NULL) {
+            if (temp->pnr == pnr) {
+                return temp->ticket;
+            }
+            temp = temp->next;
+        }
+        return NULL;
+    }
+
+    // remove a PNR from the hash map
+    void hashRemove(int pnr) {
+        int index = hashFunction(pnr);
+        HashNode* prev = NULL;
+        HashNode* cur = table[index];
+        while (cur != NULL) {
+            if (cur->pnr == pnr) {
+                if (prev == NULL) {
+                    table[index] = cur->next;
+                } else {
+                    prev->next = cur->next;
+                }
+                delete cur;
+                return;
+            }
+            prev = cur;
+            cur = cur->next;
+        }
+    }
+
+    // print the buckets that are not empty
+    void displayHash() {
+        cout << "--- PNR hash map (non-empty buckets) ---" << endl;
+        for (int i = 0; i < HASH_SIZE; i++) {
+            if (table[i] != NULL) {
+                cout << "Bucket " << i << ": ";
+                HashNode* temp = table[i];
+                while (temp != NULL) {
+                    cout << temp->pnr;
+                    if (temp->next != NULL) cout << " -> ";
+                    temp = temp->next;
+                }
+                cout << endl;
+            }
+        }
     }
 
     // add a new ticket at the end of the list
@@ -142,6 +222,9 @@ public:
             }
             temp->next = newTicket;
         }
+
+        // also store it in the hash map
+        hashInsert(pnr, newTicket);
     }
 
     // print every ticket from head to the end
@@ -161,15 +244,9 @@ public:
     }
 
     // find a ticket by PNR, returns NULL if not found
+    // uses the hash map, so no need to walk through the whole list
     Ticket* findByPnr(int pnr) {
-        Ticket* temp = head;
-        while (temp != NULL) {
-            if (temp->pnr == pnr) {
-                return temp;
-            }
-            temp = temp->next;
-        }
-        return NULL;
+        return hashSearch(pnr);
     }
 
     // remove a ticket by PNR, returns true if it was removed
@@ -177,6 +254,12 @@ public:
         if (head == NULL) {
             return false;
         }
+        // quick check with the hash map, then remove it from the hash map too
+        if (hashSearch(pnr) == NULL) {
+            return false;
+        }
+        hashRemove(pnr);
+
         // case 1: the ticket is the first one
         if (head->pnr == pnr) {
             Ticket* toDelete = head;
@@ -664,6 +747,8 @@ int main() {
         cout << "8. View waiting lists" << endl;
         cout << "9. Undo last booking" << endl;
         cout << "10. View undo history" << endl;
+        cout << "11. Find ticket by PNR" << endl;
+        cout << "12. View PNR hash map" << endl;
         cout << "0. Exit" << endl;
         cout << "Enter your choice: ";
         cin >> choice;
@@ -699,6 +784,21 @@ int main() {
         } else if (choice == 10) {
             cout << "\n--- Undo History (most recent first) ---" << endl;
             undoStack.display();
+        } else if (choice == 11) {
+            int pnr;
+            cout << "Enter PNR: ";
+            cin >> pnr;
+            Ticket* t = tickets.findByPnr(pnr);
+            if (t == NULL) {
+                cout << "Ticket not found" << endl;
+            } else {
+                cout << "PNR " << t->pnr << " | " << t->passengerName
+                     << " | Train " << t->trainId << " | " << t->source
+                     << " to " << t->destination << " | Rs " << t->fare
+                     << " | " << t->status << endl;
+            }
+        } else if (choice == 12) {
+            tickets.displayHash();
         } else if (choice == 0) {
             cout << "Goodbye" << endl;
         } else {
