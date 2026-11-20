@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string>
+#include <fstream>
 using namespace std;
 
 class Train {
@@ -527,6 +528,108 @@ void undoLastBooking(Train trains[], int trainCount, TicketList &list, WaitingQu
     cout << "Booking undone successfully" << endl;
 }
 
+// ---------- file handling ----------
+// every record is one line, fields are separated by |
+
+// write all trains into data/trains.txt
+void saveTrains(Train trains[], int count) {
+    ofstream out("data/trains.txt");
+    if (!out) {
+        cout << "Could not save trains (is there a data folder?)" << endl;
+        return;
+    }
+    for (int i = 0; i < count; i++) {
+        out << trains[i].id << "|" << trains[i].name << "|" << trains[i].source << "|"
+            << trains[i].destination << "|" << trains[i].departure << "|"
+            << trains[i].fare << "|" << trains[i].seats << endl;
+    }
+    out.close();
+}
+
+// read trains from data/trains.txt, returns how many were loaded (0 if no file)
+int loadTrains(Train trains[], int maxTrains) {
+    ifstream in("data/trains.txt");
+    if (!in) {
+        return 0;
+    }
+    int count = 0;
+    string idText, name, source, destination, depText, fareText, seatsText;
+    while (count < maxTrains && getline(in, idText, '|')) {
+        getline(in, name, '|');
+        getline(in, source, '|');
+        getline(in, destination, '|');
+        getline(in, depText, '|');
+        getline(in, fareText, '|');
+        getline(in, seatsText);
+
+        trains[count].id = stoi(idText);
+        trains[count].name = name;
+        trains[count].source = source;
+        trains[count].destination = destination;
+        trains[count].departure = stoi(depText);
+        trains[count].fare = stoi(fareText);
+        trains[count].seats = stoi(seatsText);
+        count++;
+    }
+    in.close();
+    return count;
+}
+
+// write all tickets into data/tickets.txt
+void saveTickets(TicketList &list) {
+    ofstream out("data/tickets.txt");
+    if (!out) {
+        cout << "Could not save tickets (is there a data folder?)" << endl;
+        return;
+    }
+    Ticket* temp = list.head;
+    while (temp != NULL) {
+        out << temp->pnr << "|" << temp->passengerName << "|" << temp->trainId << "|"
+            << temp->source << "|" << temp->destination << "|" << temp->fare << "|"
+            << temp->status << endl;
+        temp = temp->next;
+    }
+    out.close();
+}
+
+// read tickets from data/tickets.txt
+// waiting tickets are put back into their train's queue, in the same order
+void loadTickets(TicketList &list, WaitingQueue waitQueues[], int &nextPnr) {
+    ifstream in("data/tickets.txt");
+    if (!in) {
+        return;
+    }
+    string pnrText, name, trainIdText, source, destination, fareText, status;
+    while (getline(in, pnrText, '|')) {
+        getline(in, name, '|');
+        getline(in, trainIdText, '|');
+        getline(in, source, '|');
+        getline(in, destination, '|');
+        getline(in, fareText, '|');
+        getline(in, status);
+
+        int pnr = stoi(pnrText);
+        int trainId = stoi(trainIdText);
+        int fare = stoi(fareText);
+
+        list.addTicket(pnr, name, trainId, source, destination, fare, status);
+
+        if (status == "WAITING") {
+            waitQueues[trainId].enqueue(pnr);
+        }
+        if (pnr >= nextPnr) {
+            nextPnr = pnr + 1;
+        }
+    }
+    in.close();
+}
+
+// save everything (called after every booking, cancel and undo)
+void saveData(Train trains[], int count, TicketList &list) {
+    saveTrains(trains, count);
+    saveTickets(list);
+}
+
 int main() {
     const int MAX = 10;
     Train trains[MAX];
@@ -536,10 +639,16 @@ int main() {
     WaitingQueue waitQueues[MAX + 1];   // indexed by train id (ids start from 1)
     UndoStack undoStack;
 
-    trains[count++] = {1, "Green Line", "Karachi", "Rawalpindi", 600, 3600, 3};
-    trains[count++] = {2, "Tezgam", "Karachi", "Peshawar", 1830, 4500, 2};
-    trains[count++] = {3, "Awam Express", "Lahore", "Peshawar", 915, 1800, 1};
-    trains[count++] = {4, "Shalimar", "Multan", "Lahore", 745, 1000, 4};
+    // load saved data; if there is no trains file yet, start with these 4 trains
+    count = loadTrains(trains, MAX);
+    if (count == 0) {
+        trains[count++] = {1, "Green Line", "Karachi", "Rawalpindi", 600, 3600, 3};
+        trains[count++] = {2, "Tezgam", "Karachi", "Peshawar", 1830, 4500, 2};
+        trains[count++] = {3, "Awam Express", "Lahore", "Peshawar", 915, 1800, 1};
+        trains[count++] = {4, "Shalimar", "Multan", "Lahore", 745, 1000, 4};
+        saveTrains(trains, count);
+    }
+    loadTickets(tickets, waitQueues, nextPnr);
 
     int choice = -1;
     while (choice != 0) {
@@ -576,14 +685,17 @@ int main() {
             searchByRoute(trains, count, from, to);
         } else if (choice == 5) {
             bookTicket(trains, count, tickets, nextPnr, waitQueues, undoStack);
+            saveData(trains, count, tickets);
         } else if (choice == 6) {
             tickets.display();
         } else if (choice == 7) {
             cancelTicket(trains, count, tickets, waitQueues, undoStack);
+            saveData(trains, count, tickets);
         } else if (choice == 8) {
             showWaitingLists(trains, count, waitQueues);
         } else if (choice == 9) {
             undoLastBooking(trains, count, tickets, waitQueues, undoStack);
+            saveData(trains, count, tickets);
         } else if (choice == 10) {
             cout << "\n--- Undo History (most recent first) ---" << endl;
             undoStack.display();
