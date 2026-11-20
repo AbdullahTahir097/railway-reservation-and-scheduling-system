@@ -196,9 +196,127 @@ public:
         return false;
     }
 };
+// one node in the waiting queue
+class QueueNode {
+public:
+    int pnr;
+    QueueNode* next;
+};
+
+// FIFO queue for the waiting list of each train
+// passengers who cant get a seat join the back of the queue
+// when a seat opens up, the passenger at the front gets it
+class WaitingQueue {
+public:
+    QueueNode* front;
+    QueueNode* rear;
+    int size;
+
+    WaitingQueue() {
+        front = NULL;
+        rear = NULL;
+        size = 0;
+    }
+
+    bool isEmpty() {
+        return front == NULL;
+    }
+
+    // add a passenger's PNR to the back of the queue
+    void enqueue(int pnr) {
+        QueueNode* newNode = new QueueNode;
+        newNode->pnr = pnr;
+        newNode->next = NULL;
+
+        if (rear == NULL) {
+            front = rear = newNode;
+        } else {
+            rear->next = newNode;
+            rear = newNode;
+        }
+        size++;
+    }
+
+    // remove and return the PNR at the front of the queue
+    int dequeue() {
+        if (isEmpty()) {
+            return -1;
+        }
+        QueueNode* temp = front;
+        int pnr = temp->pnr;
+        front = front->next;
+        if (front == NULL) {
+            rear = NULL;
+        }
+        delete temp;
+        size--;
+        return pnr;
+    }
+
+    // see the front PNR without removing it
+    int peek() {
+        if (isEmpty()) {
+            return -1;
+        }
+        return front->pnr;
+    }
+
+    // print all PNRs in the queue from front to back
+    void display() {
+        if (isEmpty()) {
+            cout << "  (empty)" << endl;
+            return;
+        }
+        QueueNode* temp = front;
+        int pos = 1;
+        while (temp != NULL) {
+            cout << "  " << pos << ". PNR " << temp->pnr << endl;
+            temp = temp->next;
+            pos++;
+        }
+    }
+
+    // remove a specific PNR from anywhere in the queue
+    // needed when a waiting passenger cancels their ticket
+    bool remove(int pnr) {
+        if (isEmpty()) return false;
+
+        if (front->pnr == pnr) {
+            dequeue();
+            return true;
+        }
+
+        QueueNode* prev = front;
+        QueueNode* cur = front->next;
+        while (cur != NULL) {
+            if (cur->pnr == pnr) {
+                prev->next = cur->next;
+                if (cur == rear) {
+                    rear = prev;
+                }
+                delete cur;
+                size--;
+                return true;
+            }
+            prev = cur;
+            cur = cur->next;
+        }
+        return false;
+    }
+};
+
+// show the waiting list for every train
+void showWaitingLists(Train trains[], int trainCount, WaitingQueue waitQueues[]) {
+    cout << "\n--- Waiting Lists ---" << endl;
+    for (int i = 0; i < trainCount; i++) {
+        cout << trains[i].name << " (ID " << trains[i].id << "):" << endl;
+        waitQueues[i].display();
+    }
+}
+
 // book a ticket for a train
 // the & means the original list and counter are changed, not copies
-void bookTicket(Train trains[], int trainCount, TicketList &list, int &nextPnr) {
+void bookTicket(Train trains[], int trainCount, TicketList &list, int &nextPnr, WaitingQueue waitQueues[]) {
     int id;
     string name;
     cout << "Enter train id: ";
@@ -223,12 +341,19 @@ void bookTicket(Train trains[], int trainCount, TicketList &list, int &nextPnr) 
     }
 
     list.addTicket(nextPnr, name, id, trains[pos].source, trains[pos].destination, trains[pos].fare, status);
+
+    if (status == "WAITING") {
+        waitQueues[pos].enqueue(nextPnr);
+        cout << "Train is full. You have been added to the waiting list." << endl;
+        cout << "Your position in queue: " << waitQueues[pos].size << endl;
+    }
+
     cout << "Ticket booked. Your PNR is " << nextPnr << " (" << status << ")" << endl;
     nextPnr++;
 }
 
 // cancel a ticket using its PNR
-void cancelTicket(Train trains[], int trainCount, TicketList &list) {
+void cancelTicket(Train trains[], int trainCount, TicketList &list, WaitingQueue waitQueues[]) {
     int pnr;
     cout << "Enter PNR: ";
     cin >> pnr;
@@ -239,10 +364,26 @@ void cancelTicket(Train trains[], int trainCount, TicketList &list) {
         return;
     }
 
-    // a confirmed ticket gives its seat back to the train
     if (t->status == "CONFIRMED") {
         int pos = linearSearch(trains, trainCount, t->trainId);
-        trains[pos].seats++;
+
+        // check if someone is waiting in the queue for this train
+        if (!waitQueues[pos].isEmpty()) {
+            // promote the front of the waiting list to confirmed
+            int promotedPnr = waitQueues[pos].dequeue();
+            Ticket* promoted = list.findByPnr(promotedPnr);
+            if (promoted != NULL) {
+                promoted->status = "CONFIRMED";
+                cout << "PNR " << promotedPnr << " has been promoted from waiting list to CONFIRMED" << endl;
+            }
+        } else {
+            // no one waiting, seat goes back to the train
+            trains[pos].seats++;
+        }
+    } else if (t->status == "WAITING") {
+        // remove from the waiting queue
+        int pos = linearSearch(trains, trainCount, t->trainId);
+        waitQueues[pos].remove(pnr);
     }
 
     list.removeByPnr(pnr);
@@ -255,6 +396,7 @@ int main() {
     int count = 0;
     TicketList tickets;
     int nextPnr = 1001;
+    WaitingQueue waitQueues[MAX];
 
     trains[count++] = {1, "Green Line", "Karachi", "Rawalpindi", 600, 3600, 3};
     trains[count++] = {2, "Tezgam", "Karachi", "Peshawar", 1830, 4500, 2};
@@ -272,6 +414,7 @@ int main() {
         cout << "5. Book a ticket" << endl;
         cout << "6. View all tickets" << endl;
         cout << "7. Cancel a ticket" << endl;
+        cout << "8. View waiting lists" << endl;
         cout << "0. Exit" << endl;
         cout << "Enter your choice: ";
         cin >> choice;
@@ -292,11 +435,13 @@ int main() {
             cin >> to;
             searchByRoute(trains, count, from, to);
         } else if (choice == 5) {
-            bookTicket(trains, count, tickets, nextPnr);
+            bookTicket(trains, count, tickets, nextPnr, waitQueues);
         } else if (choice == 6) {
             tickets.display();
         } else if (choice == 7) {
-            cancelTicket(trains, count, tickets);
+            cancelTicket(trains, count, tickets, waitQueues);
+        } else if (choice == 8) {
+            showWaitingLists(trains, count, waitQueues);
         } else if (choice == 0) {
             cout << "Goodbye" << endl;
         } else {
