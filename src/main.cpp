@@ -305,6 +305,101 @@ public:
     }
 };
 
+// one node in the undo stack
+class StackNode {
+public:
+    int pnr;
+    StackNode* next;
+};
+
+// LIFO stack for undo history
+// every booking pushes onto the stack, undo pops the most recent one
+class UndoStack {
+public:
+    StackNode* top;
+    int size;
+
+    UndoStack() {
+        top = NULL;
+        size = 0;
+    }
+
+    bool isEmpty() {
+        return top == NULL;
+    }
+
+    // push a PNR onto the top of the stack
+    void push(int pnr) {
+        StackNode* newNode = new StackNode;
+        newNode->pnr = pnr;
+        newNode->next = top;
+        top = newNode;
+        size++;
+    }
+
+    // remove and return the PNR at the top of the stack
+    int pop() {
+        if (isEmpty()) {
+            return -1;
+        }
+        StackNode* temp = top;
+        int pnr = temp->pnr;
+        top = top->next;
+        delete temp;
+        size--;
+        return pnr;
+    }
+
+    // see the top PNR without removing it
+    int peek() {
+        if (isEmpty()) {
+            return -1;
+        }
+        return top->pnr;
+    }
+
+    // remove a specific PNR from anywhere in the stack
+    // needed when a ticket is cancelled manually (not via undo)
+    bool remove(int pnr) {
+        if (isEmpty()) return false;
+
+        if (top->pnr == pnr) {
+            pop();
+            return true;
+        }
+
+        StackNode* prev = top;
+        StackNode* cur = top->next;
+        while (cur != NULL) {
+            if (cur->pnr == pnr) {
+                prev->next = cur->next;
+                delete cur;
+                size--;
+                return true;
+            }
+            prev = cur;
+            cur = cur->next;
+        }
+        return false;
+    }
+
+    // print all PNRs from top to bottom
+    void display() {
+        if (isEmpty()) {
+            cout << "  (empty)" << endl;
+            return;
+        }
+        cout << "  Top -> ";
+        StackNode* temp = top;
+        while (temp != NULL) {
+            cout << "PNR " << temp->pnr;
+            if (temp->next != NULL) cout << " -> ";
+            temp = temp->next;
+        }
+        cout << endl;
+    }
+};
+
 // show the waiting list for every train
 void showWaitingLists(Train trains[], int trainCount, WaitingQueue waitQueues[]) {
     cout << "\n--- Waiting Lists ---" << endl;
@@ -316,7 +411,7 @@ void showWaitingLists(Train trains[], int trainCount, WaitingQueue waitQueues[])
 
 // book a ticket for a train
 // the & means the original list and counter are changed, not copies
-void bookTicket(Train trains[], int trainCount, TicketList &list, int &nextPnr, WaitingQueue waitQueues[]) {
+void bookTicket(Train trains[], int trainCount, TicketList &list, int &nextPnr, WaitingQueue waitQueues[], UndoStack &undoStack) {
     int id;
     string name;
     cout << "Enter train id: ";
@@ -348,12 +443,13 @@ void bookTicket(Train trains[], int trainCount, TicketList &list, int &nextPnr, 
         cout << "Your position in queue: " << waitQueues[pos].size << endl;
     }
 
+    undoStack.push(nextPnr);
     cout << "Ticket booked. Your PNR is " << nextPnr << " (" << status << ")" << endl;
     nextPnr++;
 }
 
 // cancel a ticket using its PNR
-void cancelTicket(Train trains[], int trainCount, TicketList &list, WaitingQueue waitQueues[]) {
+void cancelTicket(Train trains[], int trainCount, TicketList &list, WaitingQueue waitQueues[], UndoStack &undoStack) {
     int pnr;
     cout << "Enter PNR: ";
     cin >> pnr;
@@ -386,8 +482,47 @@ void cancelTicket(Train trains[], int trainCount, TicketList &list, WaitingQueue
         waitQueues[pos].remove(pnr);
     }
 
+    undoStack.remove(pnr);
     list.removeByPnr(pnr);
     cout << "Ticket " << pnr << " cancelled" << endl;
+}
+
+// undo the most recent booking using the stack
+void undoLastBooking(Train trains[], int trainCount, TicketList &list, WaitingQueue waitQueues[], UndoStack &undoStack) {
+    if (undoStack.isEmpty()) {
+        cout << "Nothing to undo" << endl;
+        return;
+    }
+
+    int pnr = undoStack.pop();
+    Ticket* t = list.findByPnr(pnr);
+    if (t == NULL) {
+        cout << "Ticket already removed" << endl;
+        return;
+    }
+
+    cout << "Undoing booking: PNR " << pnr << " (" << t->passengerName << ")" << endl;
+
+    if (t->status == "CONFIRMED") {
+        int pos = linearSearch(trains, trainCount, t->trainId);
+
+        if (!waitQueues[pos].isEmpty()) {
+            int promotedPnr = waitQueues[pos].dequeue();
+            Ticket* promoted = list.findByPnr(promotedPnr);
+            if (promoted != NULL) {
+                promoted->status = "CONFIRMED";
+                cout << "PNR " << promotedPnr << " has been promoted from waiting list to CONFIRMED" << endl;
+            }
+        } else {
+            trains[pos].seats++;
+        }
+    } else if (t->status == "WAITING") {
+        int pos = linearSearch(trains, trainCount, t->trainId);
+        waitQueues[pos].remove(pnr);
+    }
+
+    list.removeByPnr(pnr);
+    cout << "Booking undone successfully" << endl;
 }
 
 int main() {
@@ -397,6 +532,7 @@ int main() {
     TicketList tickets;
     int nextPnr = 1001;
     WaitingQueue waitQueues[MAX];
+    UndoStack undoStack;
 
     trains[count++] = {1, "Green Line", "Karachi", "Rawalpindi", 600, 3600, 3};
     trains[count++] = {2, "Tezgam", "Karachi", "Peshawar", 1830, 4500, 2};
@@ -415,6 +551,8 @@ int main() {
         cout << "6. View all tickets" << endl;
         cout << "7. Cancel a ticket" << endl;
         cout << "8. View waiting lists" << endl;
+        cout << "9. Undo last booking" << endl;
+        cout << "10. View undo history" << endl;
         cout << "0. Exit" << endl;
         cout << "Enter your choice: ";
         cin >> choice;
@@ -435,13 +573,18 @@ int main() {
             cin >> to;
             searchByRoute(trains, count, from, to);
         } else if (choice == 5) {
-            bookTicket(trains, count, tickets, nextPnr, waitQueues);
+            bookTicket(trains, count, tickets, nextPnr, waitQueues, undoStack);
         } else if (choice == 6) {
             tickets.display();
         } else if (choice == 7) {
-            cancelTicket(trains, count, tickets, waitQueues);
+            cancelTicket(trains, count, tickets, waitQueues, undoStack);
         } else if (choice == 8) {
             showWaitingLists(trains, count, waitQueues);
+        } else if (choice == 9) {
+            undoLastBooking(trains, count, tickets, waitQueues, undoStack);
+        } else if (choice == 10) {
+            cout << "\n--- Undo History (most recent first) ---" << endl;
+            undoStack.display();
         } else if (choice == 0) {
             cout << "Goodbye" << endl;
         } else {
