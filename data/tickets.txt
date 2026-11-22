@@ -1,2 +1,0 @@
-1001|sara|3|Lahore|Peshawar|1800|CONFIRMED
-1002|usman|3|Lahore|Peshawar|1800|WAITING
