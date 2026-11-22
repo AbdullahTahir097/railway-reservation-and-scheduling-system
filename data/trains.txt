@@ -1,4 +1,0 @@
-1|Green Line|Karachi|Rawalpindi|600|3600|3
-2|Tezgam|Karachi|Peshawar|1830|4500|2
-3|Awam Express|Lahore|Peshawar|915|1800|0
-4|Shalimar|Multan|Lahore|745|1000|4
