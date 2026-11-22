@@ -110,6 +110,7 @@ public:
     string destination;
     int fare;
     string status;      // CONFIRMED or WAITING
+    string owner;       // username of the passenger who booked it
     Ticket* next;
 };
 
@@ -202,7 +203,7 @@ public:
     }
 
     // add a new ticket at the end of the list
-    void addTicket(int pnr, string name, int trainId, string source, string destination, int fare, string status) {
+    void addTicket(int pnr, string name, int trainId, string source, string destination, int fare, string status, string owner) {
         Ticket* newTicket = new Ticket;
         newTicket->pnr = pnr;
         newTicket->passengerName = name;
@@ -211,6 +212,7 @@ public:
         newTicket->destination = destination;
         newTicket->fare = fare;
         newTicket->status = status;
+        newTicket->owner = owner;
         newTicket->next = NULL;
 
         if (head == NULL) {
@@ -241,6 +243,38 @@ public:
                  << " | " << temp->status << endl;
             temp = temp->next;
         }
+    }
+
+    // print only the tickets booked by one passenger
+    void displayByOwner(string owner) {
+        bool found = false;
+        Ticket* temp = head;
+        while (temp != NULL) {
+            if (temp->owner == owner) {
+                cout << "PNR " << temp->pnr << " | " << temp->passengerName
+                     << " | Train " << temp->trainId << " | " << temp->source
+                     << " to " << temp->destination << " | Rs " << temp->fare
+                     << " | " << temp->status << endl;
+                found = true;
+            }
+            temp = temp->next;
+        }
+        if (found == false) {
+            cout << "You have no tickets" << endl;
+        }
+    }
+
+    // count how many tickets a passenger has
+    int countByOwner(string owner) {
+        int total = 0;
+        Ticket* temp = head;
+        while (temp != NULL) {
+            if (temp->owner == owner) {
+                total++;
+            }
+            temp = temp->next;
+        }
+        return total;
     }
 
     // find a ticket by PNR, returns NULL if not found
@@ -487,6 +521,110 @@ public:
     }
 };
 
+// number of buckets in the users hash map
+const int USER_TABLE_SIZE = 13;
+
+class User {
+public:
+    string name;
+    string username;
+    string password;
+    string role;      // PASSENGER or ADMIN
+};
+
+// one node inside a bucket of the users hash map
+class UserNode {
+public:
+    User user;
+    UserNode* next;
+};
+
+// hash map of users, the key is the username
+class UserMap {
+public:
+    UserNode* table[USER_TABLE_SIZE];
+
+    UserMap() {
+        for (int i = 0; i < USER_TABLE_SIZE; i++) {
+            table[i] = NULL;
+        }
+    }
+
+    // hash function for text: add up the character codes, then take % size
+    int hashFunction(string username) {
+        int sum = 0;
+        for (int i = 0; i < (int)username.size(); i++) {
+            sum = sum + (unsigned char)username[i];
+        }
+        return sum % USER_TABLE_SIZE;
+    }
+
+    // find a user by username, returns NULL if there is no such user
+    User* search(string username) {
+        int index = hashFunction(username);
+        UserNode* temp = table[index];
+        while (temp != NULL) {
+            if (temp->user.username == username) {
+                return &(temp->user);
+            }
+            temp = temp->next;
+        }
+        return NULL;
+    }
+
+    // add a user, returns false if the username is already taken
+    bool insert(User u) {
+        if (search(u.username) != NULL) {
+            return false;
+        }
+        int index = hashFunction(u.username);
+        UserNode* newNode = new UserNode;
+        newNode->user = u;
+        newNode->next = table[index];
+        table[index] = newNode;
+        return true;
+    }
+
+    // remove a user by username, returns true if it was removed
+    bool remove(string username) {
+        int index = hashFunction(username);
+        UserNode* prev = NULL;
+        UserNode* cur = table[index];
+        while (cur != NULL) {
+            if (cur->user.username == username) {
+                if (prev == NULL) {
+                    table[index] = cur->next;
+                } else {
+                    prev->next = cur->next;
+                }
+                delete cur;
+                return true;
+            }
+            prev = cur;
+            cur = cur->next;
+        }
+        return false;
+    }
+
+    // print all passengers (not the admin)
+    void displayPassengers() {
+        int total = 0;
+        for (int i = 0; i < USER_TABLE_SIZE; i++) {
+            UserNode* temp = table[i];
+            while (temp != NULL) {
+                if (temp->user.role == "PASSENGER") {
+                    cout << temp->user.name << " | username: " << temp->user.username << endl;
+                    total++;
+                }
+                temp = temp->next;
+            }
+        }
+        if (total == 0) {
+            cout << "No passengers registered" << endl;
+        }
+    }
+};
+
 // show the waiting list for every train
 // the queues are indexed by train id, so sorting the trains does not mix them up
 void showWaitingLists(Train trains[], int trainCount, WaitingQueue waitQueues[]) {
@@ -497,11 +635,10 @@ void showWaitingLists(Train trains[], int trainCount, WaitingQueue waitQueues[])
     }
 }
 
-// book a ticket for a train
+// book a ticket for the logged in passenger
 // the & means the original list and counter are changed, not copies
-void bookTicket(Train trains[], int trainCount, TicketList &list, int &nextPnr, WaitingQueue waitQueues[], UndoStack &undoStack) {
+void bookTicket(Train trains[], int trainCount, TicketList &list, int &nextPnr, WaitingQueue waitQueues[], UndoStack &undoStack, User* me) {
     int id;
-    string name;
     cout << "Enter train id: ";
     cin >> id;
 
@@ -511,10 +648,6 @@ void bookTicket(Train trains[], int trainCount, TicketList &list, int &nextPnr, 
         return;
     }
 
-    cout << "Enter passenger name: ";
-    cin.ignore();
-    getline(cin, name);
-
     string status;
     if (trains[pos].seats > 0) {
         trains[pos].seats--;
@@ -523,7 +656,7 @@ void bookTicket(Train trains[], int trainCount, TicketList &list, int &nextPnr, 
         status = "WAITING";
     }
 
-    list.addTicket(nextPnr, name, id, trains[pos].source, trains[pos].destination, trains[pos].fare, status);
+    list.addTicket(nextPnr, me->name, id, trains[pos].source, trains[pos].destination, trains[pos].fare, status, me->username);
 
     if (status == "WAITING") {
         waitQueues[id].enqueue(nextPnr);
@@ -537,7 +670,8 @@ void bookTicket(Train trains[], int trainCount, TicketList &list, int &nextPnr, 
 }
 
 // cancel a ticket using its PNR
-void cancelTicket(Train trains[], int trainCount, TicketList &list, WaitingQueue waitQueues[], UndoStack &undoStack) {
+// requiredOwner is the passenger's username, the admin passes "" and can cancel any ticket
+void cancelTicket(Train trains[], int trainCount, TicketList &list, WaitingQueue waitQueues[], UndoStack &undoStack, string requiredOwner) {
     int pnr;
     cout << "Enter PNR: ";
     cin >> pnr;
@@ -545,6 +679,12 @@ void cancelTicket(Train trains[], int trainCount, TicketList &list, WaitingQueue
     Ticket* t = list.findByPnr(pnr);
     if (t == NULL) {
         cout << "Ticket not found" << endl;
+        return;
+    }
+
+    // a passenger can only cancel his own tickets
+    if (requiredOwner != "" && t->owner != requiredOwner) {
+        cout << "This ticket does not belong to you" << endl;
         return;
     }
 
@@ -669,7 +809,7 @@ void saveTickets(TicketList &list) {
     while (temp != NULL) {
         out << temp->pnr << "|" << temp->passengerName << "|" << temp->trainId << "|"
             << temp->source << "|" << temp->destination << "|" << temp->fare << "|"
-            << temp->status << endl;
+            << temp->status << "|" << temp->owner << endl;
         temp = temp->next;
     }
     out.close();
@@ -682,20 +822,21 @@ void loadTickets(TicketList &list, WaitingQueue waitQueues[], int &nextPnr) {
     if (!in) {
         return;
     }
-    string pnrText, name, trainIdText, source, destination, fareText, status;
+    string pnrText, name, trainIdText, source, destination, fareText, status, owner;
     while (getline(in, pnrText, '|')) {
         getline(in, name, '|');
         getline(in, trainIdText, '|');
         getline(in, source, '|');
         getline(in, destination, '|');
         getline(in, fareText, '|');
-        getline(in, status);
+        getline(in, status, '|');
+        getline(in, owner);
 
         int pnr = stoi(pnrText);
         int trainId = stoi(trainIdText);
         int fare = stoi(fareText);
 
-        list.addTicket(pnr, name, trainId, source, destination, fare, status);
+        list.addTicket(pnr, name, trainId, source, destination, fare, status, owner);
 
         if (status == "WAITING") {
             waitQueues[trainId].enqueue(pnr);
@@ -707,49 +848,122 @@ void loadTickets(TicketList &list, WaitingQueue waitQueues[], int &nextPnr) {
     in.close();
 }
 
+// write all passengers into data/users.txt (the admin is built into the program, so not saved)
+void saveUsers(UserMap &users) {
+    ofstream out("data/users.txt");
+    if (!out) {
+        cout << "Could not save users (is there a data folder?)" << endl;
+        return;
+    }
+    for (int i = 0; i < USER_TABLE_SIZE; i++) {
+        UserNode* temp = users.table[i];
+        while (temp != NULL) {
+            if (temp->user.role == "PASSENGER") {
+                out << temp->user.name << "|" << temp->user.username << "|"
+                    << temp->user.password << "|" << temp->user.role << endl;
+            }
+            temp = temp->next;
+        }
+    }
+    out.close();
+}
+
+// read the passengers from data/users.txt
+void loadUsers(UserMap &users) {
+    ifstream in("data/users.txt");
+    if (!in) {
+        return;
+    }
+    User u;
+    while (getline(in, u.name, '|')) {
+        getline(in, u.username, '|');
+        getline(in, u.password, '|');
+        getline(in, u.role);
+        users.insert(u);
+    }
+    in.close();
+}
+
 // save everything (called after every booking, cancel and undo)
 void saveData(Train trains[], int count, TicketList &list) {
     saveTrains(trains, count);
     saveTickets(list);
 }
 
-int main() {
-    const int MAX = 10;
-    Train trains[MAX];
-    int count = 0;
-    TicketList tickets;
-    int nextPnr = 1001;
-    WaitingQueue waitQueues[MAX + 1];   // indexed by train id (ids start from 1)
-    UndoStack undoStack;
-
-    // load saved data; if there is no trains file yet, start with these 4 trains
-    count = loadTrains(trains, MAX);
-    if (count == 0) {
-        trains[count++] = {1, "Green Line", "Karachi", "Rawalpindi", 600, 3600, 3};
-        trains[count++] = {2, "Tezgam", "Karachi", "Peshawar", 1830, 4500, 2};
-        trains[count++] = {3, "Awam Express", "Lahore", "Peshawar", 915, 1800, 1};
-        trains[count++] = {4, "Shalimar", "Multan", "Lahore", 745, 1000, 4};
-        saveTrains(trains, count);
+// check that text does not contain the | character (it is used to separate fields in the files)
+bool hasBar(string text) {
+    for (int i = 0; i < (int)text.size(); i++) {
+        if (text[i] == '|') {
+            return true;
+        }
     }
-    loadTickets(tickets, waitQueues, nextPnr);
+    return false;
+}
 
+// create a new passenger account
+void registerUser(UserMap &users) {
+    string name, username, password;
+    cout << "Enter your full name: ";
+    cin.ignore();
+    getline(cin, name);
+    cout << "Choose a username: ";
+    cin >> username;
+    cout << "Choose a password: ";
+    cin >> password;
+
+    if (name == "" || hasBar(name) || hasBar(username) || hasBar(password)) {
+        cout << "Invalid input. The name cannot be empty and nothing can contain the | character." << endl;
+        return;
+    }
+
+    User u;
+    u.name = name;
+    u.username = username;
+    u.password = password;
+    u.role = "PASSENGER";
+
+    if (users.insert(u) == false) {
+        cout << "That username is already taken" << endl;
+        return;
+    }
+    saveUsers(users);
+    cout << "Account created. You can login now." << endl;
+}
+
+// ask for username and password, returns the user or NULL if login failed
+User* loginUser(UserMap &users) {
+    string username, password;
+    cout << "Username: ";
+    cin >> username;
+    cout << "Password: ";
+    cin >> password;
+
+    User* u = users.search(username);
+    if (u == NULL || u->password != password) {
+        cout << "Wrong username or password" << endl;
+        return NULL;
+    }
+    cout << "Welcome, " << u->name << " (" << u->role << ")" << endl;
+    return u;
+}
+
+// menu for a logged in passenger
+void passengerMenu(User* me, Train trains[], int count, TicketList &tickets, WaitingQueue waitQueues[], UndoStack &undoStack, int &nextPnr) {
     int choice = -1;
     while (choice != 0) {
         cout << endl;
-        cout << "===== Railway Reservation System =====" << endl;
+        cout << "===== Passenger Menu: " << me->name << " =====" << endl;
         cout << "1. View all trains" << endl;
         cout << "2. Sort trains by departure time" << endl;
         cout << "3. Sort trains by fare" << endl;
         cout << "4. Search trains by route" << endl;
         cout << "5. Book a ticket" << endl;
-        cout << "6. View all tickets" << endl;
-        cout << "7. Cancel a ticket" << endl;
-        cout << "8. View waiting lists" << endl;
-        cout << "9. Undo last booking" << endl;
+        cout << "6. View my tickets" << endl;
+        cout << "7. Find my ticket by PNR" << endl;
+        cout << "8. Cancel my ticket" << endl;
+        cout << "9. Undo my last booking" << endl;
         cout << "10. View undo history" << endl;
-        cout << "11. Find ticket by PNR" << endl;
-        cout << "12. View PNR hash map" << endl;
-        cout << "0. Exit" << endl;
+        cout << "0. Logout" << endl;
         cout << "Enter your choice: ";
         cin >> choice;
 
@@ -769,27 +983,16 @@ int main() {
             cin >> to;
             searchByRoute(trains, count, from, to);
         } else if (choice == 5) {
-            bookTicket(trains, count, tickets, nextPnr, waitQueues, undoStack);
+            bookTicket(trains, count, tickets, nextPnr, waitQueues, undoStack, me);
             saveData(trains, count, tickets);
         } else if (choice == 6) {
-            tickets.display();
+            tickets.displayByOwner(me->username);
         } else if (choice == 7) {
-            cancelTicket(trains, count, tickets, waitQueues, undoStack);
-            saveData(trains, count, tickets);
-        } else if (choice == 8) {
-            showWaitingLists(trains, count, waitQueues);
-        } else if (choice == 9) {
-            undoLastBooking(trains, count, tickets, waitQueues, undoStack);
-            saveData(trains, count, tickets);
-        } else if (choice == 10) {
-            cout << "\n--- Undo History (most recent first) ---" << endl;
-            undoStack.display();
-        } else if (choice == 11) {
             int pnr;
             cout << "Enter PNR: ";
             cin >> pnr;
             Ticket* t = tickets.findByPnr(pnr);
-            if (t == NULL) {
+            if (t == NULL || t->owner != me->username) {
                 cout << "Ticket not found" << endl;
             } else {
                 cout << "PNR " << t->pnr << " | " << t->passengerName
@@ -797,8 +1000,131 @@ int main() {
                      << " to " << t->destination << " | Rs " << t->fare
                      << " | " << t->status << endl;
             }
-        } else if (choice == 12) {
+        } else if (choice == 8) {
+            cancelTicket(trains, count, tickets, waitQueues, undoStack, me->username);
+            saveData(trains, count, tickets);
+        } else if (choice == 9) {
+            undoLastBooking(trains, count, tickets, waitQueues, undoStack);
+            saveData(trains, count, tickets);
+        } else if (choice == 10) {
+            cout << "\n--- Undo History (most recent first) ---" << endl;
+            undoStack.display();
+        } else if (choice == 0) {
+            cout << "Logged out" << endl;
+        } else {
+            cout << "Invalid choice, try again" << endl;
+        }
+    }
+}
+
+// menu for the admin
+void adminMenu(Train trains[], int count, TicketList &tickets, WaitingQueue waitQueues[], UndoStack &undoStack, UserMap &users) {
+    int choice = -1;
+    while (choice != 0) {
+        cout << endl;
+        cout << "===== Admin Menu =====" << endl;
+        cout << "1. View all trains" << endl;
+        cout << "2. View all tickets" << endl;
+        cout << "3. View waiting lists" << endl;
+        cout << "4. View all passengers" << endl;
+        cout << "5. Cancel any ticket" << endl;
+        cout << "6. Delete a passenger account" << endl;
+        cout << "7. View PNR hash map" << endl;
+        cout << "0. Logout" << endl;
+        cout << "Enter your choice: ";
+        cin >> choice;
+
+        if (choice == 1) {
+            showAll(trains, count);
+        } else if (choice == 2) {
+            tickets.display();
+        } else if (choice == 3) {
+            showWaitingLists(trains, count, waitQueues);
+        } else if (choice == 4) {
+            users.displayPassengers();
+        } else if (choice == 5) {
+            cancelTicket(trains, count, tickets, waitQueues, undoStack, "");
+            saveData(trains, count, tickets);
+        } else if (choice == 6) {
+            string username;
+            cout << "Enter the username to delete: ";
+            cin >> username;
+            User* u = users.search(username);
+            if (u == NULL || u->role != "PASSENGER") {
+                cout << "No passenger with that username" << endl;
+            } else if (tickets.countByOwner(username) > 0) {
+                cout << "This passenger still has tickets. Cancel them first." << endl;
+            } else {
+                users.remove(username);
+                saveUsers(users);
+                cout << "Passenger " << username << " deleted" << endl;
+            }
+        } else if (choice == 7) {
             tickets.displayHash();
+        } else if (choice == 0) {
+            cout << "Logged out" << endl;
+        } else {
+            cout << "Invalid choice, try again" << endl;
+        }
+    }
+}
+
+int main() {
+    const int MAX = 10;
+    Train trains[MAX];
+    int count = 0;
+    TicketList tickets;
+    int nextPnr = 1001;
+    WaitingQueue waitQueues[MAX + 1];   // indexed by train id (ids start from 1)
+    UndoStack undoStack;
+    UserMap users;
+
+    // load saved data; if there is no trains file yet, start with these 4 trains
+    count = loadTrains(trains, MAX);
+    if (count == 0) {
+        trains[count++] = {1, "Green Line", "Karachi", "Rawalpindi", 600, 3600, 3};
+        trains[count++] = {2, "Tezgam", "Karachi", "Peshawar", 1830, 4500, 2};
+        trains[count++] = {3, "Awam Express", "Lahore", "Peshawar", 915, 1800, 1};
+        trains[count++] = {4, "Shalimar", "Multan", "Lahore", 745, 1000, 4};
+        saveTrains(trains, count);
+    }
+    loadTickets(tickets, waitQueues, nextPnr);
+    loadUsers(users);
+
+    // the admin account is built into the program
+    User admin;
+    admin.name = "System Admin";
+    admin.username = "admin";
+    admin.password = "admin123";
+    admin.role = "ADMIN";
+    users.insert(admin);
+
+    int choice = -1;
+    while (choice != 0) {
+        cout << endl;
+        cout << "===== Railway Reservation System =====" << endl;
+        cout << "1. Register" << endl;
+        cout << "2. Login" << endl;
+        cout << "0. Exit" << endl;
+        cout << "Enter your choice: ";
+        cin >> choice;
+
+        if (choice == 1) {
+            registerUser(users);
+        } else if (choice == 2) {
+            User* me = loginUser(users);
+            if (me != NULL) {
+                // undo history belongs to one login, so start with an empty stack
+                while (!undoStack.isEmpty()) {
+                    undoStack.pop();
+                }
+                // check the role and show the right menu
+                if (me->role == "ADMIN") {
+                    adminMenu(trains, count, tickets, waitQueues, undoStack, users);
+                } else {
+                    passengerMenu(me, trains, count, tickets, waitQueues, undoStack, nextPnr);
+                }
+            }
         } else if (choice == 0) {
             cout << "Goodbye" << endl;
         } else {
